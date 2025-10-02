@@ -113,19 +113,21 @@ bool can_add_to_team(const Team &team, const Player &player) {
 
 vector<Team> construct_initial_solution(const ProblemInstance &instance, mt19937 &rng) {
     vector<int> order(instance.J);
-    for (int i = 0; i < instance.J; i++) order[i] = i;
+    iota(order.begin(), order.end(), 0); // gera [0, 1, ..., J-1]
 
-    // Shuffle players order using seed rng
-    shuffle(order.begin(), order.end(), rng);
+    // Ordena por salário decrescente (FFD)
+    sort(order.begin(), order.end(), [&](int a, int b) {
+        return instance.players[a].salary > instance.players[b].salary;
+    });
 
     vector<Team> teams;
 
-    // Place players one by one
+    // Place players one by one (First Fit Decreasing)
     for (int pid : order) {
         const Player &p = instance.players[pid];
         bool placed = false;
 
-        // Try to place in existing teams
+        // Tenta colocar no primeiro time viável
         for (auto &team : teams) {
             if (can_add_to_team(team, p)) {
                 team.players.push_back(p.id);
@@ -135,7 +137,7 @@ vector<Team> construct_initial_solution(const ProblemInstance &instance, mt19937
             }
         }
 
-        // If not placed, create a new team
+        // Se não couber em nenhum, cria novo time
         if (!placed) {
             Team new_team;
             new_team.remaining_budget = instance.B - p.salary;
@@ -145,6 +147,84 @@ vector<Team> construct_initial_solution(const ProblemInstance &instance, mt19937
     }
 
     return teams;
+}
+
+tuple<vector<Team>, int> local_search_step_soft(vector<Team> teams, const ProblemInstance &instance, int team_to_dissolve) {
+    if (teams.size() <= 1) return {teams, 0};
+
+    Team &src_team = teams[team_to_dissolve];
+    int players_moved = 0;
+
+    if (src_team.players.empty()) return {teams, 0};
+
+    vector<int> remaining_players; // jogadores que não puderam ser movidos
+
+    // Tenta mover cada jogador para outro time
+    for (int pid : src_team.players) {
+        const Player &p = instance.players[pid];
+        bool moved = false;
+
+        for (int i = 0; i < (int)teams.size(); i++) {
+            if (i == team_to_dissolve) continue;
+            if (can_add_to_team(teams[i], p)) {
+                teams[i].players.push_back(pid);
+                teams[i].remaining_budget -= p.salary;
+                moved = true;
+                players_moved++;
+                break;
+            }
+        }
+
+        if (!moved) {
+            remaining_players.push_back(pid);
+        }
+    }
+
+    // Atualiza o time original apenas com os remanescentes
+    src_team.players = remaining_players;
+    src_team.remaining_budget = instance.B;
+    for (int pid : src_team.players)
+        src_team.remaining_budget -= instance.players[pid].salary;
+
+    // Se todos os jogadores foram movidos, apaga o time
+    if (remaining_players.empty()) {
+        teams.erase(teams.begin() + team_to_dissolve);
+    }
+
+    return {teams, players_moved};
+}
+
+
+vector<Team> local_search_soft(vector<Team> initial, const ProblemInstance &instance) {
+    vector<Team> current_solution = initial;
+    int iterations_without_improvement = 0;
+
+    while (true) {
+        int best_moved = 0;
+        int team_idx_best = -1;
+        vector<Team> best_neighbor = current_solution;
+
+        for (int t = 0; t < (int)current_solution.size(); t++) {
+            vector<Team> neighbor;
+            int moved;
+            tie(neighbor, moved) = local_search_step_soft(current_solution, instance, t);
+
+            if (moved > best_moved) {
+                best_moved = moved;
+                best_neighbor = neighbor;
+                team_idx_best = t;
+            }
+        }
+
+        if (best_moved == 0 || iterations_without_improvement > 3) break;
+
+        current_solution = best_neighbor;
+        iterations_without_improvement++;
+
+        cout << "Soft dissolve: moved " << best_moved << " players from team " << team_idx_best << "\n";
+    }
+
+    return current_solution;
 }
 
 tuple<vector<Team>, bool, int> local_search_step(std::vector<Team> teams, const ProblemInstance instance, int team_to_dissolve) {
@@ -261,9 +341,10 @@ vector<Team> local_search(vector<Team> initial,
     }
 
     return best_solution;
+    
 }
 
-vector<Team> perturbation(vector<Team> solution, mt19937 &rng, ProblemInstance instance) {
+vector<Team> perturbation(vector<Team> solution, mt19937 &rng, ProblemInstance instance, double perturbation_ratio) {
     // Flatten all players with (team_id, player_id)
     vector<pair<int,int>> all_players;
     for (int tid = 0; tid < (int)solution.size(); tid++) {
@@ -274,8 +355,9 @@ vector<Team> perturbation(vector<Team> solution, mt19937 &rng, ProblemInstance i
 
     if (all_players.empty()) return solution;
 
-    // Choose about 10% of players randomly
-    int num_to_move = max(1, (int)(all_players.size() * 0.1));
+    // Determine how many players to move, clamped to [1, all_players.size()]
+    size_t proposed = static_cast<size_t>(all_players.size() * perturbation_ratio);
+    size_t num_to_move = std::max<size_t>(1, std::min(all_players.size(), proposed));
     shuffle(all_players.begin(), all_players.end(), rng);
     vector<pair<int,int>> chosen(all_players.begin(), all_players.begin() + num_to_move);
 
@@ -334,13 +416,19 @@ int main(int argc, char* argv[]) {
     string instance_file = argv[1];
     int max_iterations = stoi(argv[2]);
     int seed = stoi(argv[3]);
-    optional<int> perturbation_size;
+    double perturbation_ratio = 0.15; // default ratio (15%)
 
     // check optional argument
     if (argc == 6) {
         string flag = argv[4];
         if (flag == "--perturbation_size") {
-            perturbation_size = stoi(argv[5]);
+            // Accept either integer percentage (e.g., 15) or float ratio (e.g., 0.15)
+            string val = argv[5];
+            if (val.find('.') != string::npos) {
+                perturbation_ratio = stod(val);
+            } else {
+                perturbation_ratio = stod(val) / 100.0;
+            }
         } else {
             cerr << "Unknown option: " << flag << "\n";
             return 1;
@@ -352,9 +440,7 @@ int main(int argc, char* argv[]) {
 
         cout << "Read instance with " << instance.J << " players, "
                   << instance.I << " conflicts, budget " << instance.B << "\n";
-        if (perturbation_size) {
-            cout << "Perturbation size = " << *perturbation_size << "\n";
-        }
+    cout << "Perturbation ratio = " << fixed << setprecision(2) << (perturbation_ratio * 100.0) << "%\n";
         cout << "Max iterations = " << max_iterations << "\n";
         cout << "Seed = " << seed << "\n";
 
@@ -370,11 +456,11 @@ int main(int argc, char* argv[]) {
         
         // Compute local search with perturbation many times
         for(int i=0; i<max_iterations; i++){
-            current_solution = perturbation(current_solution, rng, instance);
+            current_solution = perturbation(current_solution, rng, instance, perturbation_size);
             // cout << "Solution after perturbation:\n";
             // print_solution(current_solution, instance);
 
-            current_solution = local_search(current_solution, instance);
+            current_solution = local_search_soft(current_solution, instance);
             if (current_solution.size() < best_solution.size()){
                 best_solution = current_solution;
                 cout << "New solution found: " << best_solution.size() << "\n";
