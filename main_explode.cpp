@@ -7,6 +7,8 @@
 #include <optional>
 #include <algorithm> // for shuffle
 #include <iomanip>  // for setw, left, right
+#include <tuple>
+#include <set>
 
 
 using namespace std;
@@ -22,6 +24,7 @@ struct Player {
 struct Team {
     int remaining_budget;
     vector<int> players; // store player ids
+    std::set<int> prohibited_players;
 };
 
 // ================= Problem Data ================= //
@@ -98,17 +101,16 @@ ProblemInstance read_instance(const string &filename) {
 bool can_add_to_team(const Team &team, const Player &player) {
     if (player.salary > team.remaining_budget) return false;
 
-    // Check conflicts with players already in the team
-    for (int teammate_id : team.players) {
-        // If teammate is in player's conflict list, return false
-        for (int conflict : player.conflicts) {
-            if (conflict == teammate_id) {
-                return false;
-            }
+    for (int prohibited_teammate_id : team.prohibited_players)
+    {
+        if (prohibited_teammate_id == player.id)
+        {
+            return false;
         }
     }
     return true;
 }
+
 vector<Team> construct_initial_solution(const ProblemInstance &instance, mt19937 &rng) {
     vector<int> order(instance.J);
     for (int i = 0; i < instance.J; i++) order[i] = i;
@@ -166,6 +168,9 @@ tuple<vector<Team>, bool, int> local_search_step(std::vector<Team> teams, const 
             if (can_add_to_team(teams[i], p)) {
                 teams[i].players.push_back(pid);
                 teams[i].remaining_budget -= p.salary;
+                for(int player_conflict : p.conflicts){
+                    teams[i].prohibited_players.insert(player_conflict);
+                }
                 moved = true;
                 players_moved++; //count everytime a player is moved
                 break; // stop once we place the player
