@@ -6,6 +6,8 @@
 #include <random>
 #include <optional>
 #include <algorithm> // for shuffle
+#include <iomanip>  // for setw, left, right
+
 
 using namespace std;
 
@@ -29,6 +31,31 @@ struct ProblemInstance {
     int B; // budget per team
     vector<Player> players;
 };
+
+
+void print_solution(const vector<Team> &teams, const ProblemInstance &instance) {
+    cout << "\n========== Current Solution ==========\n";
+    cout << "Total teams: " << teams.size() << "\n\n";
+
+    // Print header
+    cout << left << setw(8) << "Team"
+         << setw(15) << "Budget"
+         << "Players (id:salary)\n";
+    cout << string(50, '-') << "\n";
+
+    // Print each team
+    for (int t = 0; t < (int)teams.size(); t++) {
+        cout << left << setw(8) << t
+             << setw(15) << teams[t].remaining_budget;
+
+        for (int pid : teams[t].players) {
+            cout << pid << ", ";
+        }
+        cout << "\n";
+    }
+    cout << "======================================\n";
+}
+
 
 // ================= File Reader ================= //
 ProblemInstance read_instance(const string &filename) {
@@ -169,32 +196,34 @@ tuple<vector<Team>, bool, int> local_search_step(std::vector<Team> teams, const 
 
 
 vector<Team> local_search(vector<Team> initial, 
-                               const ProblemInstance &instance, 
-                               int max_iterations) {
+                               const ProblemInstance &instance) {
 
     vector<Team> best_solution = initial;
-    vector<Team> current_team = best_solution; // This will be current node on the neighbors graph
+    vector<Team> current_solution = best_solution; // This will be current node on the neighbors graph
     vector<Team> current_best_neighbor; 
     int iterations_without_improvement=0; //Stop if nothing gets better after X iterations
-    for (int iter = 0; iter < max_iterations; iter++) {
-        int current_best_score=0; // The scores of the neighbors (best will be chosen)
+    while(true) {
+        int current_best_score=0; // The scores of the neighbors (best will be chosen for each step)
         iterations_without_improvement++;
+        int team_exploded_idx;
 
         // EACH ITERATION: node of solutions graph
 
         // For every available team, considering stepping to its direction
         // Graph step: choose this team to dissolve
         bool dissolved = false;
-        for(int team_idx=0; team_idx < current_team.size(); team_idx++){
+        for(int team_idx=0; team_idx < current_solution.size(); team_idx++){
             vector<Team> neighbor;
             int neighbor_score; // Score is how many players of this team could be moved
-            tie(neighbor, dissolved, neighbor_score) = local_search_step(best_solution, instance, team_idx);
+
+            tie(neighbor, dissolved, neighbor_score) = local_search_step(current_solution, instance, team_idx);
 
             if (dissolved) {
                 // If the team was successfully removed (rare), choose this and stop looking for other neighbors
                 current_best_neighbor=neighbor;
                 best_solution=neighbor; //Only update the best solution output when a team is dissolved (-1 total teams)
                 iterations_without_improvement=0;
+                team_exploded_idx=team_idx;
                 break; //go to next iteration
             }
 
@@ -202,15 +231,25 @@ vector<Team> local_search(vector<Team> initial,
             if(neighbor_score>current_best_score){
                 current_best_neighbor=neighbor;
                 current_best_score=neighbor_score;
+                team_exploded_idx=team_idx;
             }
         }
         if(current_best_score==0){
-            cout << "Couldnt move any player anymore.";
+            // Stop if no improvement
             break;
         } 
-            
-        current_team = current_best_neighbor; // WALK on the solutions graph
-        if(iterations_without_improvement>10) {
+
+        current_solution = current_best_neighbor; // WALK on the solutions graph
+
+        // Logs each step
+        if(dissolved){
+            cout << "Succesffuly dissolved team number " << team_exploded_idx+1 << " moving " << current_best_score << " (all) players. \n";
+        }else{
+            cout << "Exploded team number " << team_exploded_idx+1 << " moving " << current_best_score << " players. \n";
+        }
+
+        if(iterations_without_improvement>3) {
+            // After trying a lot and not dissolving any team, stop local search
             break;
         }
 
@@ -218,6 +257,63 @@ vector<Team> local_search(vector<Team> initial,
 
     return best_solution;
 }
+
+vector<Team> perturbation(vector<Team> solution, mt19937 &rng, ProblemInstance instance) {
+    // Flatten all players with (team_id, player_id)
+    vector<pair<int,int>> all_players;
+    for (int tid = 0; tid < (int)solution.size(); tid++) {
+        for (int pid : solution[tid].players) {
+            all_players.push_back({tid, pid});
+        }
+    }
+
+    if (all_players.empty()) return solution;
+
+    // Choose about 10% of players randomly
+    int num_to_move = max(1, (int)(all_players.size() * 0.1));
+    shuffle(all_players.begin(), all_players.end(), rng);
+    vector<pair<int,int>> chosen(all_players.begin(), all_players.begin() + num_to_move);
+
+    // Remove chosen players from their teams
+    for (auto [tid, pid] : chosen) {
+        auto &team = solution[tid];
+        team.players.erase(remove(team.players.begin(), team.players.end(), pid), team.players.end());
+    }
+
+    // Recompute team budgets after removals
+    for (auto &team : solution) {
+        team.remaining_budget = instance.B;
+        for (int pid : team.players) {
+            team.remaining_budget -= instance.players[pid].salary;
+        }
+    }
+
+    // Try to reassign each chosen player
+    for (auto [old_tid, pid] : chosen) {
+        const Player &p = instance.players[pid];
+        bool placed = false;
+
+        for (auto &team : solution) {
+            if (can_add_to_team(team, p)) {
+                team.players.push_back(pid);
+                team.remaining_budget -= p.salary;
+                placed = true;
+                break;
+            }
+        }
+
+        // If no team can fit, create a new one
+        if (!placed) {
+            Team new_team;
+            new_team.remaining_budget = instance.B - p.salary;
+            new_team.players.push_back(pid);
+            solution.push_back(move(new_team));
+        }
+    }
+
+    return solution;
+}
+
 
 
 
@@ -261,8 +357,26 @@ int main(int argc, char* argv[]) {
         // Build initial solution
         auto initial_solution = construct_initial_solution(instance, rng);
         cout << "Initial solution has " << initial_solution.size() << " teams.\n";
+        // cout << "Initial solution:\n";
+        // print_solution(initial_solution, instance);
 
-        auto best_solution = local_search(initial_solution, instance, max_iterations);
+        vector<Team> best_solution = initial_solution;
+        vector<Team> current_solution = best_solution;
+        
+        // Compute local search with perturbation many times
+        for(int i=0; i<max_iterations; i++){
+            current_solution = perturbation(current_solution, rng, instance);
+            // cout << "Solution after perturbation:\n";
+            // print_solution(current_solution, instance);
+
+            current_solution = local_search(current_solution, instance);
+            if (current_solution.size() < best_solution.size()){
+                best_solution = current_solution;
+                cout << "New solution found: " << best_solution.size() << "\n";
+                // print_solution(current_solution, instance);
+
+            }
+        }
 
         cout << "Final solution uses " << best_solution.size() << " teams.\n";
 
