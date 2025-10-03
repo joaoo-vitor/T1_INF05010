@@ -10,12 +10,11 @@
 #include <numeric>  // for iota
 #include <tuple>    // for tuple, tie
 #include <utility>  // for pair, move
-
+#include <chrono> // FOR counting the execution time
 
 using namespace std;
 
 // ================= Structures ================= //
-
 struct Player {
     int id;
     int salary;
@@ -36,11 +35,19 @@ struct ProblemInstance {
 };
 
 
+/**
+ * @brief Prints the current solution (teams and players) in a formatted table.
+ * 
+ * @param teams Vector of teams containing players and remaining budgets.
+ * @param instance The problem instance containing player information.
+ * 
+ * @return void
+ */
 void print_solution(const vector<Team> &teams, const ProblemInstance &instance) {
     cout << "\n========== Current Solution ==========\n";
     cout << "Total teams: " << teams.size() << "\n\n";
 
-    // Print header
+    // Print table header
     cout << left << setw(8) << "Team"
          << setw(15) << "Budget"
          << "Players (id:salary)\n";
@@ -59,8 +66,14 @@ void print_solution(const vector<Team> &teams, const ProblemInstance &instance) 
     cout << "======================================\n";
 }
 
-
-// ================= File Reader ================= //
+/**
+ * @brief Reads a problem instance from a file.
+ * 
+ * @param filename The name of the file containing the instance data.
+ * 
+ * @return ProblemInstance The populated problem instance with players, conflicts, and budget.
+ * @throws runtime_error If the file cannot be opened.
+ */
 ProblemInstance read_instance(const string &filename) {
     ProblemInstance instance;
     ifstream in(filename);
@@ -97,7 +110,15 @@ ProblemInstance read_instance(const string &filename) {
     return instance;
 }
 
-// ================= Helper: check if player fits in a team ================= //
+/**
+ * @brief Checks if a player can be added to a given team.
+ * 
+ * @param team The team to insert the player.
+ * @param player The player to be tested for insertion.
+ * 
+ * @return true If the player can be added without exceeding budget or causing conflicts.
+ * @return false Otherwise.
+ */
 bool can_add_to_team(const Team &team, const Player &player) {
     if (player.salary > team.remaining_budget) return false;
 
@@ -113,11 +134,19 @@ bool can_add_to_team(const Team &team, const Player &player) {
     return true;
 }
 
+/**
+ * @brief Constructs an initial solution using First Fit Decreasing (FFD).
+ * 
+ * @param instance The problem instance with players and constraints.
+ * @param rng Random number generator (for potential shuffling, if needed).
+ * 
+ * @return vector<Team> A set of initial teams with assigned players.
+ */
 vector<Team> construct_initial_solution(const ProblemInstance &instance, mt19937 &rng) {
     vector<int> order(instance.J);
     iota(order.begin(), order.end(), 0); // gera [0, 1, ..., J-1]
 
-    // Ordena por salário decrescente (FFD)
+    // Sort by descendent salary (FFD)
     sort(order.begin(), order.end(), [&](int a, int b) {
         return instance.players[a].salary > instance.players[b].salary;
     });
@@ -129,7 +158,7 @@ vector<Team> construct_initial_solution(const ProblemInstance &instance, mt19937
         const Player &p = instance.players[pid];
         bool placed = false;
 
-        // Tenta colocar no primeiro time viável
+        // Try to put on the first viable team
         for (auto &team : teams) {
             if (can_add_to_team(team, p)) {
                 team.players.push_back(p.id);
@@ -139,7 +168,7 @@ vector<Team> construct_initial_solution(const ProblemInstance &instance, mt19937
             }
         }
 
-        // Se não couber em nenhum, cria novo time
+        // If doesnt fit on no one, create a new team
         if (!placed) {
             Team new_team;
             new_team.remaining_budget = instance.B - p.salary;
@@ -151,6 +180,19 @@ vector<Team> construct_initial_solution(const ProblemInstance &instance, mt19937
     return teams;
 }
 
+/**
+ * @brief Step in the neighborhood of the localsearch by attempting to dissolve a given team
+ *        and redistribute its players.
+ * 
+ * @param teams Current list of teams.
+ * @param instance The problem instance with players and constraints.
+ * @param team_to_dissolve Index of the team selected to attempt dissolution.
+ * 
+ * @return tuple<vector<Team>, bool, int> 
+ *         - Updated set of teams.
+ *         - Boolean flag indicating whether the team was successfully dissolved.
+ *         - Number of players moved during the step (score of neighbor).
+ */
 tuple<vector<Team>, bool, int> local_search_step(std::vector<Team> teams, const ProblemInstance instance, int team_to_dissolve) {
     if (teams.size() <= 1) return {teams, false, 0};
     
@@ -200,7 +242,14 @@ tuple<vector<Team>, bool, int> local_search_step(std::vector<Team> teams, const 
     return {teams, false, players_moved}; // no full team dissolved
 }
 
-
+/**
+ * @brief Executes a local search to improve the solution.
+ * 
+ * @param initial The starting solution (vector of teams).
+ * @param instance The problem instance with players and constraints.
+ * 
+ * @return vector<Team> The best solution found by local search.
+ */
 vector<Team> local_search(vector<Team> initial, 
                                const ProblemInstance &instance) {
 
@@ -247,12 +296,12 @@ vector<Team> local_search(vector<Team> initial,
 
         current_solution = current_best_neighbor; // WALK on the solutions graph
 
-        // Logs each step
-        if(dissolved){
-            cout << "Succesffuly dissolved team number " << team_exploded_idx+1 << " moving " << current_best_score << " (all) players. \n";
-        }else{
-            cout << "Exploded team number " << team_exploded_idx+1 << " moving " << current_best_score << " players. \n";
-        }
+        // // Logs each step
+        // if(dissolved){
+        //     cout << "Succesffuly dissolved team number " << team_exploded_idx+1 << " moving " << current_best_score << " (all) players. \n";
+        // }else{
+        //     cout << "Exploded team number " << team_exploded_idx+1 << " moving " << current_best_score << " players. \n";
+        // }
 
         if(iterations_without_improvement>3) {
             // After trying a lot and not dissolving any team, stop local search
@@ -265,6 +314,17 @@ vector<Team> local_search(vector<Team> initial,
     
 }
 
+/**
+ * @brief Applies a perturbation to the current solution by moving a random percentage 
+ *        of players to new teams, creating new teams if moving fails.
+ * 
+ * @param solution Current solution.
+ * @param rng Random number generator for selecting players to move.
+ * @param instance The original problem instance with players and constraints.
+ * @param perturbation_ratio The percentage of players to perturb (0.0–1.0).
+ * 
+ * @return vector<Team> The perturbed solution after reassignments.
+ */
 vector<Team> perturbation(vector<Team> solution, mt19937 &rng, ProblemInstance instance, double perturbation_ratio) {
     // Flatten all players with (team_id, player_id)
     vector<pair<int,int>> all_players;
@@ -276,7 +336,7 @@ vector<Team> perturbation(vector<Team> solution, mt19937 &rng, ProblemInstance i
 
     if (all_players.empty()) return solution;
 
-    // Determine how many players to move, clamped to [1, all_players.size()]
+    // Determine how many players to move, ranging from [1, all_players.size()]
     size_t proposed = static_cast<size_t>(all_players.size() * perturbation_ratio);
     size_t num_to_move = std::max<size_t>(1, std::min(all_players.size(), proposed));
     shuffle(all_players.begin(), all_players.end(), rng);
@@ -328,41 +388,40 @@ vector<Team> perturbation(vector<Team> solution, mt19937 &rng, ProblemInstance i
 }
 
 
-
-
-// ================= Main ================= //
-
 int main(int argc, char* argv[]) {
+    auto start = chrono::high_resolution_clock::now();
+
+    // Checks for right amount of arguments
     if (argc < 4) {
         cerr << "Usage: " << argv[0]
-                  << " <instance_file> <max_iterations> <seed> [--perturbation_size N]\n";
+        << " <instance_file> <max_iterations> <seed> [--perturbation_ratio N]\n";
         return 1;
     }
 
+    // Read arguments
     string instance_file = argv[1];
     int max_iterations = stoi(argv[2]);
     int seed = stoi(argv[3]);
-    double perturbation_size = 0.15;
+    double pertubation_ratio = 0.15;
 
-    // check optional argument
+    // Check optional argument
     if (argc == 6) {
         string flag = argv[4];
-        if (flag == "--perturbation_size") {
-            perturbation_size = stoi(argv[5]);
+        if (flag == "--perturbation_ratio") {
+            pertubation_ratio = stoi(argv[5]);
         } else {
             cerr << "Unknown option: " << flag << "\n";
             return 1;
         }
     }
 
+
     try {
+        // Read problem instance
         ProblemInstance instance = read_instance(instance_file);
 
         cout << "Read instance with " << instance.J << " players, "
-                  << instance.I << " conflicts, budget " << instance.B << "\n";
-        // if (perturbation_size) {
-        //     cout << "Perturbation size = " << *perturbation_size << "\n";
-        // }
+        << instance.I << " conflicts, budget " << instance.B << "\n";
         cout << "Max iterations = " << max_iterations << "\n";
         cout << "Seed = " << seed << "\n";
 
@@ -370,8 +429,6 @@ int main(int argc, char* argv[]) {
         // Build initial solution
         auto initial_solution = construct_initial_solution(instance, rng);
         cout << "Initial solution has " << initial_solution.size() << " teams.\n";
-        // cout << "Initial solution:\n";
-        // print_solution(initial_solution, instance);
 
         vector<Team> best_solution = initial_solution;
         vector<Team> current_solution = best_solution;
@@ -380,15 +437,18 @@ int main(int argc, char* argv[]) {
         for(int i=0; i<max_iterations; i++){
             
             current_solution = local_search(current_solution, instance);
+
             if (current_solution.size() < best_solution.size()){
-                best_solution = current_solution;
-                cout << "New solution found: " << best_solution.size() << "\n";
-                // print_solution(current_solution, instance);
+                // Get elapsed time for logging
+                auto now = chrono::high_resolution_clock::now();
+                auto elapsed_ms = chrono::duration_cast<chrono::milliseconds>(now - start).count();
                 
+                best_solution = current_solution;
+                cout << "(" << elapsed_ms/1000.0 << ") New solution found: " << best_solution.size() << " teams.\n";    
+                print_solution(best_solution, instance);
             }
-            current_solution = perturbation(current_solution, rng, instance, perturbation_size);
-            // cout << "Solution after perturbation:\n";
-            // print_solution(current_solution, instance);
+            
+            current_solution = perturbation(current_solution, rng, instance, pertubation_ratio);
         }
 
         cout << "Final solution uses " << best_solution.size() << " teams.\n";
