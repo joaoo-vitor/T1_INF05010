@@ -9,16 +9,26 @@ Este projeto implementa uma meta-heuristica de Busca Local Iterada (ILS) para re
 - Aline Fraga da Silva
 
 ## Como rodar esse repositorio:
-- Instale um compilador C++ (ex: MinGW);
-- Tenha o `g++` disponível no PATH do sistema;
-- Baixe/clone o repositório para sua máquina;
+- Instale um compilador C++:
+```sh
+sudo apt update && sudo apt install g++
+```
+- Certifique-se de que o g++ está disponível no seu PATH:
+```sh
+g++ --version
+```
+- Baixe/clone o repositório para sua máquina:
+```sh
+git clone https://github.com/joaoo-vitor/T1_INF05010
+cd T1_INF05010
+```
 - Compile o código executando o comando abaixo:
 ```sh
-g++ -O2 -std=c++17 -Wall -Wextra -o main_explode main_explode.cpp
+g++ -O2 -std=c++17 -Wall -Wextra -o ils ils.cpp
 ```
 - Execute o código compilado chamando o arquivo compilado com argumentos:
 ```sh
-main_explode.exe <caminho_da_instancia> <numero_maximo_de_iterações> <seed_de_aleatoriedade> [--perturbation_ratio <pertubation_ratio>]
+./ils <caminho_da_instancia> <numero_maximo_de_iteracoes> <seed_de_aleatoriedade> [--perturbation_ratio <perturbation_ratio>]
 ```
 Onde:
 - `<caminho_da_instancia>` -> Caminho para arquivo de texto contendo a instância no formato do enunciado do trabalho;
@@ -28,7 +38,7 @@ Onde:
 
 Exemplo:
 ```sh
-.\main_explode.exe "instances/01.txt" 100 0 --perturbation_ratio 0.2
+./ils instances/01.txt 100 1 --perturbation_ratio 0.15
 ```
 
 ## Link para relatório preliminar:
