@@ -342,7 +342,7 @@ int main(int argc, char* argv[]) {
     string instance_file = argv[1];
     int max_iterations = stoi(argv[2]);
     int seed = stoi(argv[3]);
-    double perturbation_size = 15.0;
+    double perturbation_size = 0.15;
 
     // check optional argument
     if (argc == 6) {
@@ -378,17 +378,17 @@ int main(int argc, char* argv[]) {
         
         // Compute local search with perturbation many times
         for(int i=0; i<max_iterations; i++){
-            current_solution = perturbation(current_solution, rng, instance, perturbation_size);
-            // cout << "Solution after perturbation:\n";
-            // print_solution(current_solution, instance);
-
+            
             current_solution = local_search(current_solution, instance);
             if (current_solution.size() < best_solution.size()){
                 best_solution = current_solution;
                 cout << "New solution found: " << best_solution.size() << "\n";
                 // print_solution(current_solution, instance);
-
+                
             }
+            current_solution = perturbation(current_solution, rng, instance, perturbation_size);
+            // cout << "Solution after perturbation:\n";
+            // print_solution(current_solution, instance);
         }
 
         cout << "Final solution uses " << best_solution.size() << " teams.\n";
