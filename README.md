@@ -24,7 +24,12 @@ Onde:
 - `<caminho_da_instancia>` -> Caminho para arquivo de texto contendo a instância no formato do enunciado do trabalho;
 - `<numero_maximo_de_iterações>` -> Número máximo de iterações de **Busca Local + Pertubação**;
 - `<seed_de_aleatoriedade>` -> Semente de aleatoriedade usada para gerar a solução inicial e para escolher os jogadores para cada perturbação.
-- `<pertubation_ratio>` -> Porcentagem de jogadores que sofrerão pertubação (troca de times) após cada iteração do __Local Search__ (default é 15%).
+- `<pertubation_ratio>` -> Porcentagem de jogadores que sofrerão pertubação (troca de times) após cada iteração do __Local Search__, um valor de 0 a 1. (default é 0.15, ou seja, 15%).
+
+Exemplo:
+```sh
+.\main_explode.exe "instances/01.txt" 100 0 --perturbation_ratio 0.2
+```
 
 ## Link para relatório preliminar:
 <botar_aqui_aline>

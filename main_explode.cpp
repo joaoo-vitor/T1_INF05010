@@ -43,7 +43,7 @@ struct ProblemInstance {
  * 
  * @return void
  */
-void print_solution(const vector<Team> &teams, const ProblemInstance &instance) {
+void print_solution(const vector<Team> &teams) {
     cout << "\n========== Current Solution ==========\n";
     cout << "Total teams: " << teams.size() << "\n\n";
 
@@ -445,7 +445,7 @@ int main(int argc, char* argv[]) {
                 
                 best_solution = current_solution;
                 cout << "(" << elapsed_ms/1000.0 << ") New solution found: " << best_solution.size() << " teams.\n";    
-                print_solution(best_solution, instance);
+                print_solution(best_solution);
             }
             
             current_solution = perturbation(current_solution, rng, instance, pertubation_ratio);
