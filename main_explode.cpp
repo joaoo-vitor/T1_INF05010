@@ -378,7 +378,7 @@ int main(int argc, char* argv[]) {
         
         // Compute local search with perturbation many times
         for(int i=0; i<max_iterations; i++){
-            current_solution = perturbation(current_solution, rng, instance, perturbation_ratio);
+            current_solution = perturbation(current_solution, rng, instance, perturbation_size);
             // cout << "Solution after perturbation:\n";
             // print_solution(current_solution, instance);
 
