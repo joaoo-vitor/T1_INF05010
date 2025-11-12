@@ -30,7 +30,7 @@ function run_all_instances()
         )
     end
 
-    for i in 1:10
+    for i in 9:10
         instance_name = lpad(i, 2, '0') * ".txt"
         filename = joinpath(base_path, instance_name)
 

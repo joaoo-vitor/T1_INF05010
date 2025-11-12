@@ -5,7 +5,6 @@ Pkg.instantiate()
 
 using JuMP
 using HiGHS
-using Cbc
 
 struct Player
         id::Int
@@ -64,7 +63,7 @@ end
 
 function fli(filename::String, time_limit::Float64, seed::Int)
     # Cria modelo HIGH com os parâmetors dados
-    m = Model(Cbc.Optimizer)
+    m = Model(HiGHS.Optimizer)
     set_optimizer_attribute(m, "time_limit", time_limit)
     set_optimizer_attribute(m, "random_seed", seed)
 
@@ -121,7 +120,7 @@ function fli(filename::String, time_limit::Float64, seed::Int)
 
     println("Solução inicial setada:")
     for j in 1:c_max_times
-    jogadores_time = [i for i in 1:J if get_start_value(x[i,j]) == 1]
+    jogadores_time = [i for i in 1:J if start_value(x[i,j]) == 1]
     println("Time $j: jogadores $jogadores_time")
     end
 
