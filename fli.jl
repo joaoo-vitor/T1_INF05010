@@ -120,8 +120,8 @@ function fli(filename::String, time_limit::Float64, seed::Int)
 
     println("Solução inicial setada:")
     for j in 1:c_max_times
-    jogadores_time = [i for i in 1:J if start_value(x[i,j]) == 1]
-    println("Time $j: jogadores $jogadores_time")
+        jogadores_time = [i for i in 1:J if start_value(x[i,j]) == 1]
+        println("Time $j: jogadores $jogadores_time")
     end
 
     println("tamanho da variavel x:", size(x))
@@ -137,29 +137,38 @@ function fli(filename::String, time_limit::Float64, seed::Int)
 
     # -- constraints
     # - restrição de budget para cada time
+    # numero de restrições: c_max_times
     @constraint(m, [j=1:c_max_times], sum(x[1:J, j] .* salarios[1:J]) <= B);
 
     # - restrição para cada conflito
     # exemplo: jogadores a e b tem conflito
     # o jogador a estar no time j implica que o jogador b não está no time j
     # x[a, j] -> ~x[b, j]
+    # numero de restrições (no pior caso): c_max_times * I 
     for conflito in conflitos
         (a,b) = conflito
-        @constraint(m, [j=1:c_max_times], x[a, j] <= (1- x[b, j]))
+        # OTIMIZAÇÃO 1:
+        # Se a soma de dois salários dá maior que o budget, podemos ignorar esse conflito
+        # visto que eles nunca poderiam estar juntos (pela outra restrição)
+        if salarios[a] + salarios[b] <= B
+            @constraint(m, [j=1:c_max_times], x[a,j] + x[b,j] <= 1)
+        end
     end
 
     # - restrição para yj ter o significado certo
     # yj -> x1j v x2j v ... v xij
     # (poderia fazer o caso para limitar superiormente y, mas como é minimização não precisa)
-    # @constraint(m, [j=1:c_max_times], y[j] >= sum(x[1:J, j])/J)
-    @constraint(m, [i=1:J, j=1:c_max_times], x[i,j] <= y[j])
+    # numero de restrições : c_max_times
+    @constraint(m, [j=1:c_max_times], y[j] >= sum(x[1:J, j])/J)
+    # @constraint(m, [i=1:J, j=1:c_max_times], x[i,j] <= y[j])
 
     # - restrição para que todo jogador seja assignado
     # (poderia fazer o caso para que um jogador não seja assignado mais de uma vez, mas como é minimização não precisa)
+    # numero de restrições: J
     @constraint(m, [i=1:J], sum(x[i,1:c_max_times])==1)
 
     optimize!(m)
-    @show objective_value(m)
+    return Int(c_max_times), Int(objective_value(m))
 end
 
 if abspath(PROGRAM_FILE) == @__FILE__

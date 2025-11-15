@@ -26,11 +26,12 @@ function run_all_instances()
             nome_arquivo = String[],
             seed = Int[],
             tempo_total = Float64[],
-            solucao_encontrada = Float64[],
+            solucao_inicial = Int[],
+            solucao_encontrada = Int[],
         )
     end
 
-    for i in 9:10
+    for i in 1:10
         instance_name = lpad(i, 2, '0') * ".txt"
         filename = joinpath(base_path, instance_name)
 
@@ -44,7 +45,7 @@ function run_all_instances()
             try
                 # Mede o tempo de execução e captura o valor retornado
                 tempo_total = @elapsed begin
-                    solucao = fli(filename, time_limit, seed)
+                    solucao_inicial, solucao = fli(filename, time_limit, seed)
                 end
 
                 # Adiciona linha no DataFrame
@@ -52,7 +53,8 @@ function run_all_instances()
                     nome_arquivo = instance_name,
                     seed = seed,
                     tempo_total = tempo_total,
-                    solucao_encontrada = solucao,
+                    solucao_inicial = solucao_inicial,
+                    solucao_encontrada = solucao
                 ))
 
                 println("✅ Solução: $solucao (tempo = $(round(tempo_total, digits=2)) s)")
@@ -64,7 +66,8 @@ function run_all_instances()
                     nome_arquivo = instance_name,
                     seed = seed,
                     tempo_total = NaN,
-                    solucao_encontrada = NaN,
+                    solucao_inicial= NaN,
+                    solucao_encontrada = NaN
                 ))
             end
 
