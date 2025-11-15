@@ -39,7 +39,6 @@ struct ProblemInstance {
  * @brief Prints the current solution (teams and players) in a formatted table.
  * 
  * @param teams Vector of teams containing players and remaining budgets.
- * @param instance The problem instance containing player information.
  * 
  * @return void
  */
@@ -203,6 +202,7 @@ tuple<vector<Team>, bool, int> local_search_step(std::vector<Team> teams, const 
 
     std::vector<int> remaining_players; // Players that we fail to move
     bool all_moved = true;
+    int total_economy = 0; // Money saved from the source team from removing players
 
     // Try to move every player
     for (int pid : src_team.players) {
@@ -214,6 +214,7 @@ tuple<vector<Team>, bool, int> local_search_step(std::vector<Team> teams, const 
             if (can_add_to_team(teams[i], p)) {
                 teams[i].players.push_back(pid);
                 teams[i].remaining_budget -= p.salary;
+                total_economy+=p.salary;
                 moved = true;
                 players_moved++; //count everytime a player is moved
                 break; // stop once we place the player
@@ -226,19 +227,16 @@ tuple<vector<Team>, bool, int> local_search_step(std::vector<Team> teams, const 
         }
     }
 
-    // Update the source team’s players and budget
-    src_team.players = remaining_players;
-    src_team.remaining_budget = instance.B;
-    for (int pid : src_team.players) {
-        src_team.remaining_budget -= instance.players[pid].salary;
-    }
-
     // If we moved everyone, delete the team (improvement)
     if (all_moved) {
         teams.erase(teams.begin() + team_to_dissolve);
         return {teams, true, players_moved};
     }
 
+    // Update the source team’s players and budget
+    src_team.players = remaining_players;
+    src_team.remaining_budget+=total_economy;
+    
     return {teams, false, players_moved}; // no full team dissolved
 }
 
@@ -269,7 +267,7 @@ vector<Team> local_search(vector<Team> initial,
         bool dissolved = false;
         for(int team_idx=0; team_idx < current_solution.size(); team_idx++){
             vector<Team> neighbor;
-            int neighbor_score; // Score is how many players of this team could be moved
+            int neighbor_score; // Score is how many players of this team could be moved out
 
             tie(neighbor, dissolved, neighbor_score) = local_search_step(current_solution, instance, team_idx);
 
@@ -282,17 +280,13 @@ vector<Team> local_search(vector<Team> initial,
                 break; //go to next iteration
             }
 
-            // Keep track of the best neighbor in case no one actually improves
+            // Keep track of the best neighbor in case no one actually improves (dissolves)
             if(neighbor_score>current_best_score){
                 current_best_neighbor=neighbor;
                 current_best_score=neighbor_score;
                 team_exploded_idx=team_idx;
             }
         }
-        if(current_best_score==0){
-            // Stop if no improvement
-            break;
-        } 
 
         current_solution = current_best_neighbor; // WALK on the solutions graph
 
