@@ -26,6 +26,12 @@ cd T1_INF05010
 ```sh
 g++ -O2 -std=c++17 -Wall -Wextra -o ils ils.cpp
 ```
+
+Ou, para fazer debug:
+```sh
+g++ -O2 -std=c++17 -Wall -Wextra -g -o ils ils.cpp
+```
+
 - Execute o código compilado chamando o arquivo compilado com argumentos:
 ```sh
 ./ils <caminho_da_instancia> <numero_maximo_de_iteracoes> <seed_de_aleatoriedade> [--perturbation_ratio <perturbation_ratio>]

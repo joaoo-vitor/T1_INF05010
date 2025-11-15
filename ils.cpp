@@ -137,11 +137,10 @@ bool can_add_to_team(const Team &team, const Player &player) {
  * @brief Constructs an initial solution using First Fit Decreasing (FFD).
  * 
  * @param instance The problem instance with players and constraints.
- * @param rng Random number generator (for potential shuffling, if needed).
  * 
  * @return vector<Team> A set of initial teams with assigned players.
  */
-vector<Team> construct_initial_solution(const ProblemInstance &instance, mt19937 &rng) {
+vector<Team> construct_initial_solution(const ProblemInstance &instance) {
     vector<int> order(instance.J);
     iota(order.begin(), order.end(), 0); // gera [0, 1, ..., J-1]
 
@@ -421,7 +420,7 @@ int main(int argc, char* argv[]) {
 
         mt19937 rng(seed);
         // Build initial solution
-        auto initial_solution = construct_initial_solution(instance, rng);
+        auto initial_solution = construct_initial_solution(instance);
         cout << "Initial solution has " << initial_solution.size() << " teams.\n";
 
         vector<Team> best_solution = initial_solution;
