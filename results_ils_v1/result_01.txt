@@ -1,0 +1,9 @@
+Read instance with 116 players, 215 conflicts, budget 500
+Max iterations = 1000
+Seed = 1
+Initial solution has 26 teams.
+
+Time limit of 300s reached.
+
+ILS finished after 54128 iterations.
+Final solution uses 26 teams.

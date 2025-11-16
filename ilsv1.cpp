@@ -239,41 +239,96 @@ tuple<vector<Team>, bool, int> local_search_step(std::vector<Team> teams, const 
     return {teams, false, players_moved}; // no full team dissolved
 }
 
+/**
+ * @brief Executes a local search to improve the solution.
+ * 
+ * @details The neighborhood behavior is the following:
+ *  1. For each team, generate a neighbor by exploding that team.
+ *  2. If this neighbor dissolves the team, immediately select it and stop checking further teams.
+ *  3. Otherwise, if the neighbor’s score (`neighbor_score`) is better than `last_score`,
+ *     immediately select it and stop checking further teams.
+ *  4. If no neighbor improves upon `last_score`, choose the neighbor with the highest score
+ *     among all teams.
+ *  5. If after 20 iterations no best_score is found nor team is dissolved, the search stops.
+ * @param initial The starting solution (vector of teams).
+ * @param instance The problem instance with players and constraints.
+ * 
+ * @return vector<Team> The best solution found by local search.
+ */
 vector<Team> local_search(vector<Team> initial, const ProblemInstance &instance) {
     vector<Team> best_solution = initial;
-    
+    vector<Team> current_solution = best_solution; // This will be current node on the neighbors graph
+    vector<Team> target_neighbor; 
+    int iterations_without_improvement=0; //Stop if nothing gets better after X iterations
+    int last_score=0; // This will be the score of the last step on the graph
+                     // It will be used to check if found a best score than the last one
+    int best_score=0; // This will be the highest score since the last dissolution
+    vector<Team> last_node; // This will be used to check for loops
     while(true) {
-        bool was_dissolved = false;
-        vector<Team> next_solution;
+        int target_neighbor_score=-1; 
+        int current_best_score=-1; // The scores of the neighbors (best will be chosen for each step)
+        iterations_without_improvement++;
+        int team_exploded_idx;
 
-        // Create a team ids list 
-        std::vector<int> team_indices(best_solution.size());
-        std::iota(team_indices.begin(), team_indices.end(), 0);
+        // EACH ITERATION: node of solutions graph
 
-        // Sort teams to dissolve teams with smaller size first
-        std::sort(team_indices.begin(), team_indices.end(), [&](int idx_a, int idx_b) {
-            return best_solution[idx_a].players.size() < best_solution[idx_b].players.size();
-        });
-
-        for(int team_idx : team_indices){
+        // For every available team, considering stepping to its direction
+        // Graph step: choose this team to dissolve
+        bool dissolved = false;
+        for(int team_idx=0; team_idx < current_solution.size(); team_idx++){
             vector<Team> neighbor;
             int neighbor_score=0; // Score is how many players of this team could be moved out
 
             // Get neighbor for testing score
-            tie(neighbor, was_dissolved, neighbor_score) = local_search_step(best_solution, instance, team_idx);
+            tie(neighbor, dissolved, neighbor_score) = local_search_step(current_solution, instance, team_idx);
 
-            if (was_dissolved) {
+            if (dissolved) {
                 // If the team was successfully removed (rare), choose this and stop looking for other neighbors
-                next_solution=neighbor;
-                was_dissolved = true;
+                target_neighbor=neighbor;
+                best_solution=neighbor; //Only update the best solution output when a team is dissolved (-1 total teams)
+                team_exploded_idx=team_idx;
+                target_neighbor_score=0;
+                iterations_without_improvement=0;
+                best_score=0; // best_score is reset
                 break; //go to next iteration
             }
-        }
 
-        if(was_dissolved) {
-            best_solution = next_solution;
-        } else {
-            break; // Finish local search
+            // First FIT (if neighbor score is better than the last score)
+            if(neighbor_score > last_score){
+                target_neighbor_score=neighbor_score;
+                target_neighbor = neighbor;
+                team_exploded_idx=team_idx;
+                if(neighbor_score>best_score){
+                    best_score=neighbor_score; // keep track if it improves
+                    iterations_without_improvement=0;
+                }
+                break;
+            }
+
+            // If no neighbor has a better score than the last node
+            // Use the best among the neighbors
+            if(neighbor_score>current_best_score){
+                current_best_score=neighbor_score;
+                target_neighbor_score=neighbor_score;
+                target_neighbor = neighbor;
+                team_exploded_idx=team_idx;
+                // iterations_without_improvement ISNT reset
+            }
+        }
+        current_solution = target_neighbor; // WALK on the solutions graph
+        last_score=target_neighbor_score;
+
+        // Logs each step
+        // if(dissolved){
+        //     cout << "Succesffuly dissolved team number " << team_exploded_idx+1 << " moving " << target_neighbor_score << " (all) players. \n";
+        //     cout << "New solution has " << current_solution.size() << " teams. \n";
+        // }else{
+        //     cout << "Exploded team number " << team_exploded_idx+1 << " moving " << target_neighbor_score << " players. \n";
+        // }
+
+        if(iterations_without_improvement>20) {
+            // After trying a lot and not dissolving any team, stop local search
+            break;
         }
 
     }
