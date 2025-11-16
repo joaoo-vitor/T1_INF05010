@@ -362,21 +362,21 @@ int main(int argc, char* argv[]) {
     // Checks for right amount of arguments
     if (argc < 4) {
         cerr << "Usage: " << argv[0]
-        << " <instance_file> <max_iterations> <seed> [--perturbation_ratio N]\n";
+        << " <instance_file> <time> <seed> [--perturbation_ratio N]\n";
         return 1;
     }
 
     // Read arguments
     string instance_file = argv[1];
-    int max_iterations = stoi(argv[2]);
+    int time = stoi(argv[2]);
     int seed = stoi(argv[3]);
-    double pertubation_ratio = 0.15;
+    double perturbation_ratio = 0.15;
 
     // Check optional argument
     if (argc == 6) {
         string flag = argv[4];
         if (flag == "--perturbation_ratio") {
-            pertubation_ratio = stoi(argv[5]);
+            perturbation_ratio = stoi(argv[5]);
         } else {
             cerr << "Unknown option: " << flag << "\n";
             return 1;
@@ -390,7 +390,7 @@ int main(int argc, char* argv[]) {
 
         cout << "Read instance with " << instance.J << " players, "
         << instance.I << " conflicts, budget " << instance.B << "\n";
-        cout << "Max iterations = " << max_iterations << "\n";
+        cout << "Time = " << time << "\n";
         cout << "Seed = " << seed << "\n";
 
         mt19937 rng(seed);
@@ -402,15 +402,15 @@ int main(int argc, char* argv[]) {
         vector<Team> current_solution = best_solution;
 
         int iterations_done = 0; 
-        const double time_limit_seconds = 300.0; 
+        int intermediate_solutions_number = 0;
         
         // Compute local search with perturbation many times
         while(true){
             auto now_check = chrono::high_resolution_clock::now();
             auto elapsed_seconds = chrono::duration_cast<chrono::duration<double>>(now_check - start).count();
 
-            if (elapsed_seconds >= time_limit_seconds) {
-                cout << "\nTime limit of " << time_limit_seconds << "s reached.\n";
+            if (elapsed_seconds >= time) {
+                cout << "\nTime limit of " << time << "s reached.\n";
                 break;
             }
 
@@ -420,19 +420,40 @@ int main(int argc, char* argv[]) {
                 // Get elapsed time for logging
                 auto now = chrono::high_resolution_clock::now();
                 auto elapsed_ms = chrono::duration_cast<chrono::milliseconds>(now - start).count();
-                
                 best_solution = current_solution;
+                intermediate_solutions_number++;
                 cout << "(" << elapsed_ms/1000.0 << ") New solution found in LS: " << best_solution.size() << " teams.\n";    
                 print_solution(best_solution);
             }
             
-            current_solution = perturbation(current_solution, rng, instance, pertubation_ratio);
+            current_solution = perturbation(current_solution, rng, instance, perturbation_ratio);
 
             iterations_done++;
         }
 
         cout << "\nILS finished after " << iterations_done << " iterations.\n";
         cout << "Final solution uses " << best_solution.size() << " teams.\n";
+
+        // Save the results to a csv file
+        const string csv_filename = "ils_results.csv";
+        ofstream outfile;
+        outfile.open(csv_filename, ios_base::app); 
+
+        if (!outfile.is_open()) {
+            cerr << "Error: Can not open CSV file for writing named" << csv_filename << "\n";
+            return 1;
+        }
+
+        outfile << instance_file << ","
+                << initial_solution.size() << ","
+                << intermediate_solutions_number << ","
+                << best_solution.size() << ","
+                << iterations_done << ","
+                << time << ","
+                << seed << ","
+                << perturbation_ratio << "\n";
+
+        outfile.close();
 
     } catch (const exception &ex) {
         cerr << "Error: " << ex.what() << "\n";
