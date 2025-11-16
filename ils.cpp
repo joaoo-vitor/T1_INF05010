@@ -1,153 +1,354 @@
 #include <iostream>
-#include <map>
 #include <fstream>
 #include <vector>
 #include <string>
 #include <sstream>
 #include <random>
 #include <optional>
-#include <algorithm>
-#include <iomanip> 
-#include <numeric>  
+#include <algorithm> 
+#include <iomanip>  
+#include <numeric> 
 #include <tuple>    
 #include <utility>  
 #include <chrono> 
-#include <set>
-#include <stdexcept> 
-#include <unordered_set>
 
 using namespace std;
 
-// Player struct 
+// ================= Structures ================= //
 struct Player {
     int id;
     int salary;
-    vector<int> conflicts; // Players id wh have a conflict
+    vector<int> conflicts; // store indices of players it conflicts with
 };
 
-// Instance struct
+struct Team {
+    int remaining_budget;
+    vector<int> players; // store player ids
+};
+
+// ================= Problem Data ================= //
 struct ProblemInstance {
-    int J; // players number
-    int I; // Conflicts number
-    int B; // Budget per team
+    int J; // number of players
+    int I; // number of conflicts
+    int B; // budget per team
     vector<Player> players;
 };
 
-// Team struct
-struct Team {
-    int total_salary = 0;
-    unordered_set<int> player_ids_set; // Quickly checks conflicts
-    vector<int> player_ids_list;
 
-    // Checks if a player can join a team
-    bool CanAddPlayer(const Player& player, int budget_B) const {
-        
-        // Check the budget
-        if (total_salary + player.salary > budget_B) {
-            return false;
+/**
+ * @brief Prints the current solution (teams and players) in a formatted table.
+ * 
+ * @param teams Vector of teams containing players and remaining budgets.
+ * 
+ * @return void
+ */
+void print_solution(const vector<Team> &teams) {
+    cout << "\n========== Current Solution ==========\n";
+    cout << "Total teams: " << teams.size() << "\n\n";
+
+    // Print table header
+    cout << left << setw(8) << "Team"
+         << setw(15) << "Budget"
+         << "Players (id:salary)\n";
+    cout << string(50, '-') << "\n";
+
+    // Print each team
+    for (int t = 0; t < (int)teams.size(); t++) {
+        cout << left << setw(8) << t
+             << setw(15) << teams[t].remaining_budget;
+
+        for (int pid : teams[t].players) {
+            cout << pid << ", ";
         }
-
-        // Check the coonflicts
-        for (int conflicted_player_id : player.conflicts) {
-            if (player_ids_set.count(conflicted_player_id)) { 
-                return false; // Returns false if a player with a conflict is already on the team
-            }
-        }
-        
-        return true;
+        cout << "\n";
     }
+    cout << "======================================\n";
+}
 
-    // Clean the team
-    void Clear() {
-        total_salary = 0;
-        player_ids_set.clear();
-        player_ids_list.clear();
-    }
-
-    // Add a valid player to the team
-    void AddPlayer(const Player& player) {
-        total_salary += player.salary;
-        player_ids_set.insert(player.id);
-        player_ids_list.push_back(player.id);
-    }
-};
-
-// Solution struct
-struct Solution {
-    vector<Team> teams;
-};
-
+/**
+ * @brief Reads a problem instance from a file.
+ * 
+ * @param filename The name of the file containing the instance data.
+ * 
+ * @return ProblemInstance The populated problem instance with players, conflicts, and budget.
+ * @throws runtime_error If the file cannot be opened.
+ */
 ProblemInstance read_instance(const string &filename) {
     ProblemInstance instance;
-    
-    // Open file
     ifstream in(filename);
     if (!in.is_open()) {
-        throw runtime_error("Cannot open the file " + filename);
+        throw runtime_error("Could not open file " + filename);
     }
 
-    // Read budget B
+    // First line: B
     in >> instance.B;
 
-    // Read J and I
+    // Second line: J and I
     in >> instance.J >> instance.I;
 
-    //Resize the vector to fit all players
     instance.players.resize(instance.J);
 
-    // Read salaries (lines 3 - 2+J)
+    // Next J lines: salaries
     for (int i = 0; i < instance.J; i++) {
-        instance.players[i].id = i; // Define o ID (base 0)
-        in >> instance.players[i].salary; // Lê o salário da linha
+        int s;
+        in >> s;
+        instance.players[i].id = i;
+        instance.players[i].salary = s;
     }
 
-    // Read conflicts (lines 2+J+1 - 2+J+I)
+    // Next I lines: conflicts
     for (int k = 0; k < instance.I; k++) {
         int u, v;
-        in >> u >> v; // Ids based on 1
-
-        // Convert ids to base 0
-        u--; 
-        v--;
-
-        // Add conflicts to both players lists
+        in >> u >> v;
+        // Convert to 0-based indexing
+        u--; v--;
         instance.players[u].conflicts.push_back(v);
         instance.players[v].conflicts.push_back(u);
     }
 
-    in.close(); 
     return instance;
 }
 
-// Build the initial solution using a first-fit strategy with random order
-Solution build_initial_solution(const ProblemInstance& instance, mt19937& g) {
-    Solution solution;
+/**
+ * @brief Checks if a player can be added to a given team.
+ * 
+ * @param team The team to insert the player.
+ * @param player The player to be tested for insertion.
+ * 
+ * @return true If the player can be added without exceeding budget or causing conflicts.
+ * @return false Otherwise.
+ */
+bool can_add_to_team(const Team &team, const Player &player) {
+    if (player.salary > team.remaining_budget) return false;
 
-    // Create a players id list
-    vector<int> player_order(instance.J);
-    iota(player_order.begin(), player_order.end(), 0);
+    // Check conflicts with players already in the team
+    for (int teammate_id : team.players) {
+        // If teammate is in player's conflict list, return false
+        for (int conflict : player.conflicts) {
+            if (conflict == teammate_id) {
+                return false;
+            }
+        }
+    }
+    return true;
+}
 
-    // Shuffle the players randomly
-    shuffle(player_order.begin(), player_order.end(), g);
+/**
+ * @brief Constructs an initial solution using First Fit Decreasing (FFD).
+ * 
+ * @param instance The problem instance with players and constraints.
+ * 
+ * @return vector<Team> A set of initial teams with assigned players.
+ */
+vector<Team> construct_initial_solution(const ProblemInstance &instance, mt19937 rng) {
 
-    for (int player_id : player_order) {
-        const Player& player = instance.players[player_id];
-        bool allocated = false;
+    // Create a player ids list
+    vector<int> order(instance.J);
+    iota(order.begin(), order.end(), 0); 
 
-        // Try to allocate it to the first valid team
-        for (Team& team : solution.teams) {
-            if (team.CanAddPlayer(player, instance.B)) {
-                team.AddPlayer(player);
-                allocated = true;
+    // Shuffle players ids
+    std::shuffle(order.begin(), order.end(), rng);
+
+    vector<Team> teams;
+
+    // Place players one by one (First Fit Decreasing)
+    for (int pid : order) {
+        const Player &p = instance.players[pid];
+        bool placed = false;
+
+        // Try to put on the first viable team
+        for (auto &team : teams) {
+            if (can_add_to_team(team, p)) {
+                team.players.push_back(p.id);
+                team.remaining_budget -= p.salary;
+                placed = true;
                 break;
             }
         }
 
-        // Create a new team if it cannot be allocated 
-        if (!allocated) {
+        // If doesnt fit on no one, create a new team
+        if (!placed) {
             Team new_team;
-            new_team.AddPlayer(player);
-            solution.teams.push_back(new_team);
+            new_team.remaining_budget = instance.B - p.salary;
+            new_team.players.push_back(p.id);
+            teams.push_back(move(new_team));
+        }
+    }
+
+    return teams;
+}
+
+/**
+ * @brief Step in the neighborhood of the localsearch by attempting to dissolve a given team
+ *        and redistribute its players.
+ * 
+ * @param teams Current list of teams.
+ * @param instance The problem instance with players and constraints.
+ * @param team_to_dissolve Index of the team selected to attempt dissolution.
+ * 
+ * @return tuple<vector<Team>, bool, int> 
+ *         - Updated set of teams.
+ *         - Boolean flag indicating whether the team was successfully dissolved.
+ *         - Number of players moved during the step (score of neighbor).
+ */
+tuple<vector<Team>, bool, int> local_search_step(std::vector<Team> teams, const ProblemInstance instance, int team_to_dissolve) {
+    if (teams.size() <= 1) return {teams, false, 0};
+    
+    Team &src_team = teams[team_to_dissolve];
+    int players_moved=0; // How many players of this team could be moved
+    
+    if (src_team.players.empty()) return {teams, false, 0};
+
+    std::vector<int> remaining_players; // Players that we fail to move
+    bool all_moved = true;
+    int total_economy = 0; // Money saved from the source team from removing players
+
+    // Try to move every player
+    for (int pid : src_team.players) {
+        const Player &p = instance.players[pid];
+        bool moved = false;
+
+        for (int i = 0; i < (int)teams.size(); i++) {
+            if (i == team_to_dissolve) continue; // skip own team
+            if (can_add_to_team(teams[i], p)) {
+                teams[i].players.push_back(pid);
+                teams[i].remaining_budget -= p.salary;
+                total_economy+=p.salary;
+                moved = true;
+                players_moved++; //count everytime a player is moved
+                break; // stop once we place the player
+            }
+        }
+
+        if (!moved) {
+            remaining_players.push_back(pid);
+            all_moved = false;
+        }
+    }
+
+    // If we moved everyone, delete the team (improvement)
+    if (all_moved) {
+        teams.erase(teams.begin() + team_to_dissolve);
+        return {teams, true, players_moved};
+    }
+
+    // Update the source team’s players and budget
+    src_team.players = remaining_players;
+    src_team.remaining_budget+=total_economy;
+    
+    return {teams, false, players_moved}; // no full team dissolved
+}
+
+vector<Team> local_search(vector<Team> initial, const ProblemInstance &instance) {
+    vector<Team> best_solution = initial;
+    
+    while(true) {
+        bool was_dissolved = false;
+        vector<Team> next_solution;
+
+        // Create a team ids list 
+        std::vector<int> team_indices(best_solution.size());
+        std::iota(team_indices.begin(), team_indices.end(), 0);
+
+        // Sort teams to dissolve teams with smaller size first
+        std::sort(team_indices.begin(), team_indices.end(), [&](int idx_a, int idx_b) {
+            return best_solution[idx_a].players.size() < best_solution[idx_b].players.size();
+        });
+
+        for(int team_idx : team_indices){
+            vector<Team> neighbor;
+            int neighbor_score=0; // Score is how many players of this team could be moved out
+
+            // Get neighbor for testing score
+            tie(neighbor, was_dissolved, neighbor_score) = local_search_step(best_solution, instance, team_idx);
+
+            if (was_dissolved) {
+                // If the team was successfully removed (rare), choose this and stop looking for other neighbors
+                next_solution=neighbor;
+                was_dissolved = true;
+                break; //go to next iteration
+            }
+        }
+
+        if(was_dissolved) {
+            best_solution = next_solution;
+        } else {
+            break; // Finish local search
+        }
+
+    }
+
+    return best_solution;
+    
+}
+
+/**
+ * @brief Applies a perturbation to the current solution by moving a random percentage 
+ *        of players to new teams, creating new teams if moving fails.
+ * 
+ * @param solution Current solution.
+ * @param rng Random number generator for selecting players to move.
+ * @param instance The original problem instance with players and constraints.
+ * @param perturbation_ratio The percentage of players to perturb (0.0–1.0).
+ * 
+ * @return vector<Team> The perturbed solution after reassignments.
+ */
+vector<Team> perturbation(vector<Team> solution, mt19937 &rng, ProblemInstance instance, double perturbation_ratio) {
+    // Flatten all players with (team_id, player_id)
+    vector<pair<int,int>> all_players;
+    for (int tid = 0; tid < (int)solution.size(); tid++) {
+        for (int pid : solution[tid].players) {
+            all_players.push_back({tid, pid});
+        }
+    }
+
+    if (all_players.empty()) return solution;
+
+    // Determine how many players to move, ranging from [1, all_players.size()]
+    size_t proposed = static_cast<size_t>(all_players.size() * perturbation_ratio);
+    size_t num_to_move = std::max<size_t>(1, std::min(all_players.size(), proposed));
+    shuffle(all_players.begin(), all_players.end(), rng);
+    vector<pair<int,int>> chosen(all_players.begin(), all_players.begin() + static_cast<long>(num_to_move));
+
+    // Remove chosen players from their teams
+    for (const auto &tp : chosen) {
+        int tid = tp.first;
+        int pid = tp.second;
+        auto &team = solution[tid];
+        team.players.erase(remove(team.players.begin(), team.players.end(), pid), team.players.end());
+    }
+
+    // Recompute team budgets after removals
+    for (auto &team : solution) {
+        team.remaining_budget = instance.B;
+        for (int pid : team.players) {
+            team.remaining_budget -= instance.players[pid].salary;
+        }
+    }
+
+    // Try to reassign each chosen player
+    for (const auto &tp : chosen) {
+        int old_tid = tp.first;
+        (void)old_tid; // not used, but kept for clarity
+        int pid = tp.second;
+        const Player &p = instance.players[pid];
+        bool placed = false;
+
+        for (auto &team : solution) {
+            if (can_add_to_team(team, p)) {
+                team.players.push_back(pid);
+                team.remaining_budget -= p.salary;
+                placed = true;
+                break;
+            }
+        }
+
+        // If no team can fit, create a new one
+        if (!placed) {
+            Team new_team;
+            new_team.remaining_budget = instance.B - p.salary;
+            new_team.players.push_back(pid);
+            solution.push_back(move(new_team));
         }
     }
 
@@ -155,216 +356,13 @@ Solution build_initial_solution(const ProblemInstance& instance, mt19937& g) {
 }
 
 
-void local_search(const ProblemInstance& instance, Solution& solution) {
-    bool improved = true;
-
-    // Perform a local search while dissolving teams
-    while (improved) {
-        improved = false;
-
-        // Create a team ids list
-        vector<int> team_indices(solution.teams.size());
-        iota(team_indices.begin(), team_indices.end(), 0);
-
-        if (team_indices.size() <= 1) break; // Just one team
-
-        // Order the teams in ascending order of size because dissolving smaller teams is easier
-        sort(team_indices.begin(), team_indices.end(), [&](int a, int b) {
-            return solution.teams[a].player_ids_list.size() < 
-                   solution.teams[b].player_ids_list.size();
-        });
-
-        // try to dissolve a team
-        for (int team_a_index : team_indices) {
-            
-            Team& team_a = solution.teams[team_a_index];
-            if (team_a.player_ids_list.empty()) {
-                continue; // Empty team
-            }
-
-            // Identifies the players to move
-            vector<int> players_to_move = team_a.player_ids_list;
-            
-            // Planning Phase
-
-            // <player_id, target_team_index>
-            map<int, int> planned_moves;
-            // <team_index, extra_salary_load>
-            map<int, int> future_salary_load; 
-            // <team_index, set_of_player_ids>
-            map<int, set<int>> future_player_set; 
-            
-            bool all_players_can_be_moved = true;
-
-            // Try to plan the movement of each player on the team
-            for (int player_id : players_to_move) {
-                const Player& player = instance.players[player_id];
-                bool found_spot_for_this_player = false;
-
-                // Try to find a new team
-                for (int team_b_index = 0; team_b_index < solution.teams.size(); ++team_b_index) {
-                    if (team_a_index == team_b_index) {
-                        continue; // Same team
-                    }
-
-                    const Team& team_b = solution.teams[team_b_index];
-
-                    // Check salary
-                    int planned_salary = future_salary_load[team_b_index];
-                    if (team_b.total_salary + planned_salary + player.salary > instance.B) {
-                        continue;
-                    }
-
-                    // Check conflicts
-                    bool conflict = false;
-
-                    // Check conflict with current team players
-                    for (int conflicted_player_id : player.conflicts) {
-                        if (team_b.player_ids_set.count(conflicted_player_id)) {
-                            conflict = true;
-                            break;
-                        }
-                    }
-                    if (conflict) continue;
-
-                    // Check conflict with players already planned for this team
-                    for (int other_planned_player : future_player_set[team_b_index]) {
-                        for (int p_conflict_id : player.conflicts) {
-                            if (p_conflict_id == other_planned_player) {
-                                conflict = true;
-                                break;
-                            }
-                        }
-                        if (conflict) break;
-                    }
-                    if (conflict) continue;
-
-                    // New team for the player found
-                    found_spot_for_this_player = true;
-                    planned_moves[player_id] = team_b_index;
-                    future_salary_load[team_b_index] += player.salary;
-                    future_player_set[team_b_index].insert(player_id);
-                    break; // Stop to find a team to this player
-                }
-
-                if (!found_spot_for_this_player) {
-                    all_players_can_be_moved = false;
-                    break; //The player in question cannot be assigned to any other team, therefore this team cannot be dissolved
-                }
-            }
-
-            // Execution Phase
-
-            if (all_players_can_be_moved) {
-                
-                // Apply the planed moves
-                for (const auto& move : planned_moves) {
-                    int player_id = move.first;
-                    int target_team_index = move.second;
-                    const Player& player_obj = instance.players[player_id];
-                    
-                    solution.teams[target_team_index].AddPlayer(player_obj);
-                }
-
-                // Clean team
-                solution.teams[team_a_index].Clear();
-
-                // Identify improvement
-                improved = true;
-                break; 
-            }
-        } 
-    } 
-
-    // Clear all empty teams
-    solution.teams.erase(
-        remove_if(solution.teams.begin(), solution.teams.end(), 
-            [](const Team& t) { return t.player_ids_list.empty(); }
-        ),
-        solution.teams.end()
-    );
-}
-
-// Solution disturbance using the destroy and rebuild strategy, selecting randoly k team to destroy
-void pertubarion_destroy_and_rebuild(const ProblemInstance& instance, Solution& solution, int k, mt19937& g) {
-    int num_teams = solution.teams.size();
-
-    // No teams
-    if (num_teams == 0) {
-        return; 
-    }
-
-    // Check if it is not already greater than the number of teams
-    if (k > num_teams) {
-        k = num_teams;
-    }
-
-    // Create a teams ids list
-    vector<int> team_indices(num_teams);
-    iota(team_indices.begin(), team_indices.end(), 0);
-
-    //  Shuffle the players randomly
-    shuffle(team_indices.begin(), team_indices.end(), g);
-
-    vector<int> destroied_teams_players;
-
-    // Destroy firt k teams
-    for (int i = 0; i < k; ++i) {
-        int team_index_to_destroy = team_indices[i];
-        Team& team = solution.teams[team_index_to_destroy];
-
-        // Add players team to insert again 
-        destroied_teams_players.insert(
-            destroied_teams_players.end(),
-            team.player_ids_list.begin(),
-            team.player_ids_list.end()
-        );
-
-        // Clear team
-        team.Clear();
-    }
-
-    //  Shuffle the players randomly
-    shuffle(destroied_teams_players.begin(), destroied_teams_players.end(), g);
-
-    // Insert the players without team using first-fit strategy
-    for (int player_id : destroied_teams_players) {
-        const Player& player = instance.players[player_id];
-        bool allocated = false;
-
-        // Try allocating them to any team, including the recently disbanded ones
-        for (Team& team : solution.teams) {
-            if (team.CanAddPlayer(player, instance.B)) {
-                team.AddPlayer(player);
-                allocated = true;
-                break;
-            }
-        }
-
-        // Create a new team if need
-        if (!allocated) {
-            Team new_team;
-            new_team.AddPlayer(player);
-            solution.teams.push_back(new_team);
-        }
-    }
-
-    // Removes all empty teams
-    solution.teams.erase(
-        remove_if(solution.teams.begin(), solution.teams.end(), 
-            [](const Team& t) { return t.player_ids_list.empty(); }
-        ),
-        solution.teams.end()
-    );
-}
-
 int main(int argc, char* argv[]) {
     auto start = chrono::high_resolution_clock::now();
 
     // Checks for right amount of arguments
     if (argc < 4) {
         cerr << "Usage: " << argv[0]
-        << " <instance_file> <max_iterations> <seed>]\n";
+        << " <instance_file> <max_iterations> <seed> [--perturbation_ratio N]\n";
         return 1;
     }
 
@@ -372,66 +370,60 @@ int main(int argc, char* argv[]) {
     string instance_file = argv[1];
     int max_iterations = stoi(argv[2]);
     int seed = stoi(argv[3]);
+    double pertubation_ratio = 0.15;
 
-    try { 
+    // Check optional argument
+    if (argc == 6) {
+        string flag = argv[4];
+        if (flag == "--perturbation_ratio") {
+            pertubation_ratio = stoi(argv[5]);
+        } else {
+            cerr << "Unknown option: " << flag << "\n";
+            return 1;
+        }
+    }
+
+
+    try {
+        // Read problem instance
+        ProblemInstance instance = read_instance(instance_file);
+
+        cout << "Read instance with " << instance.J << " players, "
+        << instance.I << " conflicts, budget " << instance.B << "\n";
+        cout << "Max iterations = " << max_iterations << "\n";
+        cout << "Seed = " << seed << "\n";
+
+        mt19937 rng(seed);
+        // Build initial solution
+        auto initial_solution = construct_initial_solution(instance, rng);
+        cout << "Initial solution has " << initial_solution.size() << " teams.\n";
+
+        vector<Team> best_solution = initial_solution;
+        vector<Team> current_solution = best_solution;
         
-        ProblemInstance prob = read_instance(instance_file);
-
-        // Seed
-        mt19937 g(seed);
-
-        // --- 2. Parâmetros do ILS ---
-        const int MAX_ITERATIONS = max_iterations;
-        const int MAX_iter_without_improvement = 20; // Para controle de 'k'
-        
-        int k_min = 2; // Minimum force of the disturbance
-        int k_max = 5; // Maximum force of the disturbance
-        int k_current = k_min;
-        int iter_without_improvement = 0;
-        
-        // --- 1. Construção e Otimização Inicial ---
-        Solution current_solution = build_initial_solution(prob, g);
-        local_search(prob, current_solution);
-        Solution best_solution = current_solution;
-
-        cout << "[Iter 0] Initial Solution = " 
-             << best_solution.teams.size() << " teams" << endl;
-
-        for (int i = 1; i <= MAX_ITERATIONS; ++i) {
-            current_solution = best_solution;
-
+        // Compute local search with perturbation many times
+        for(int i=0; i<max_iterations; i++){
             
-            pertubarion_destroy_and_rebuild(prob, current_solution, k_current, g); 
-            local_search(prob, current_solution); 
+            cout << "Local search number " << (1+i) << "\n";
+            current_solution = local_search(current_solution, instance);
 
-            if (current_solution.teams.size() < best_solution.teams.size()) {
-                best_solution = current_solution; // Novo ótimo global
-                iter_without_improvement = 0;
-                k_current = k_min;
-
-                cout << "[Iter " << i << "] New Solution = " 
-                     << best_solution.teams.size() << " teams" << endl;
-            } else {
-                iter_without_improvement++;
+            if (current_solution.size() < best_solution.size()){
+                // Get elapsed time for logging
+                auto now = chrono::high_resolution_clock::now();
+                auto elapsed_ms = chrono::duration_cast<chrono::milliseconds>(now - start).count();
+                
+                best_solution = current_solution;
+                cout << "(" << elapsed_ms/1000.0 << ") New solution found in LS: " << best_solution.size() << " teams.\n";    
+                print_solution(best_solution);
             }
+            
+            current_solution = perturbation(current_solution, rng, instance, pertubation_ratio);
         }
 
-        cout << "\n--- ILS Finish ---" << endl;
-        cout << "Better Solution = " 
-             << best_solution.teams.size() << " teams" << endl;
-        
-        // Print better solution
-        int team_num = 1;
-        for (const auto& team : best_solution.teams) {
-            cout << "Time " << team_num++ << " (Salário: " << team.total_salary << "): ";
-            for (int id : team.player_ids_list) {
-                cout << id + 1 << " "; // +1 para mostrar em base 1
-            }
-            cout << endl;
-        }
+        cout << "Final solution uses " << best_solution.size() << " teams.\n";
 
-    } catch (const exception& e) {
-        cerr << e.what() << endl;
+    } catch (const exception &ex) {
+        cerr << "Error: " << ex.what() << "\n";
         return 1;
     }
 
