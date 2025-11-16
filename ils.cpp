@@ -1,4 +1,5 @@
 #include <iostream>
+#include <map>
 #include <fstream>
 #include <vector>
 #include <string>
@@ -157,70 +158,107 @@ Solution build_initial_solution(const ProblemInstance& instance, mt19937& g) {
 void local_search(const ProblemInstance& instance, Solution& solution) {
     bool improved = true;
 
-    // Repeat local search while improving the solution (to dissolve teams)
+    // Perform a local search while dissolving teams
     while (improved) {
         improved = false;
 
-        // Create a players id list
+        // Create a team ids list
         vector<int> team_indices(solution.teams.size());
         iota(team_indices.begin(), team_indices.end(), 0);
 
-        // Order in ascending order to dissolve smaller teams first 
+        if (team_indices.size() <= 1) break; // Just one team
+
+        // Order the teams in ascending order of size because dissolving smaller teams is easier
         sort(team_indices.begin(), team_indices.end(), [&](int a, int b) {
             return solution.teams[a].player_ids_list.size() < 
                    solution.teams[b].player_ids_list.size();
         });
 
-        // Try to dissolve a team
-        for (int team_index_to_empty : team_indices) {
+        // try to dissolve a team
+        for (int team_a_index : team_indices) {
             
-            Team& team_to_empty = solution.teams[team_index_to_empty];
-            if (team_to_empty.player_ids_list.empty()) {
+            Team& team_a = solution.teams[team_a_index];
+            if (team_a.player_ids_list.empty()) {
                 continue; // Empty team
             }
 
-            // Identify team players to move
-            vector<int> players_to_move = team_to_empty.player_ids_list;
+            // Identifies the players to move
+            vector<int> players_to_move = team_a.player_ids_list;
             
-            // Stores player movements for new teams
-            vector<pair<int, int>> proposed_moves;
+            // Planning Phase
 
-            // Verify if the team was dissolved
-            bool all_players_can_move = true;
-
-            // Create a new solution with players moved
-            vector<Team> hypothetical_teams = solution.teams;
+            // <player_id, target_team_index>
+            map<int, int> planned_moves;
+            // <team_index, extra_salary_load>
+            map<int, int> future_salary_load; 
+            // <team_index, set_of_player_ids>
+            map<int, set<int>> future_player_set; 
             
-            // Try to move each player
+            bool all_players_can_be_moved = true;
+
+            // Try to plan the movement of each player on the team
             for (int player_id : players_to_move) {
-                const Player& player_obj = instance.players[player_id];
-                bool found_spot = false;
+                const Player& player = instance.players[player_id];
+                bool found_spot_for_this_player = false;
 
                 // Try to find a new team
-                for (int k = 0; k < hypothetical_teams.size(); ++k) {
-                    if (k == team_index_to_empty) {
+                for (int team_b_index = 0; team_b_index < solution.teams.size(); ++team_b_index) {
+                    if (team_a_index == team_b_index) {
                         continue; // Same team
                     }
 
-                    if (hypothetical_teams[k].CanAddPlayer(player_obj, instance.B)) {
-                        hypothetical_teams[k].AddPlayer(player_obj); // Found a new team
-                        proposed_moves.push_back({player_id, k});
-                        found_spot = true;
-                        break; // Stop looking for a new team for this player
+                    const Team& team_b = solution.teams[team_b_index];
+
+                    // Check salary
+                    int planned_salary = future_salary_load[team_b_index];
+                    if (team_b.total_salary + planned_salary + player.salary > instance.B) {
+                        continue;
                     }
+
+                    // Check conflicts
+                    bool conflict = false;
+
+                    // Check conflict with current team players
+                    for (int conflicted_player_id : player.conflicts) {
+                        if (team_b.player_ids_set.count(conflicted_player_id)) {
+                            conflict = true;
+                            break;
+                        }
+                    }
+                    if (conflict) continue;
+
+                    // Check conflict with players already planned for this team
+                    for (int other_planned_player : future_player_set[team_b_index]) {
+                        for (int p_conflict_id : player.conflicts) {
+                            if (p_conflict_id == other_planned_player) {
+                                conflict = true;
+                                break;
+                            }
+                        }
+                        if (conflict) break;
+                    }
+                    if (conflict) continue;
+
+                    // New team for the player found
+                    found_spot_for_this_player = true;
+                    planned_moves[player_id] = team_b_index;
+                    future_salary_load[team_b_index] += player.salary;
+                    future_player_set[team_b_index].insert(player_id);
+                    break; // Stop to find a team to this player
                 }
 
-                if (!found_spot) { // The team has a player who cannot be transferred to a new team, so it cannot be dissolved
-                    all_players_can_move = false;
-                    break;
+                if (!found_spot_for_this_player) {
+                    all_players_can_be_moved = false;
+                    break; //The player in question cannot be assigned to any other team, therefore this team cannot be dissolved
                 }
             }
 
-            // Check if all players can be moved
-            if (all_players_can_move) {
+            // Execution Phase
+
+            if (all_players_can_be_moved) {
                 
-                // Apply the player movements for his new teams
-                for (const auto& move : proposed_moves) {
+                // Apply the planed moves
+                for (const auto& move : planned_moves) {
                     int player_id = move.first;
                     int target_team_index = move.second;
                     const Player& player_obj = instance.players[player_id];
@@ -228,17 +266,17 @@ void local_search(const ProblemInstance& instance, Solution& solution) {
                     solution.teams[target_team_index].AddPlayer(player_obj);
                 }
 
-                // clear the team
-                solution.teams[team_index_to_empty].Clear();
+                // Clean team
+                solution.teams[team_a_index].Clear();
 
-                // Set the improvement
+                // Identify improvement
                 improved = true;
-                break;
+                break; 
             }
-        }
-    }
+        } 
+    } 
 
-    // Removes all empty teams
+    // Clear all empty teams
     solution.teams.erase(
         remove_if(solution.teams.begin(), solution.teams.end(), 
             [](const Team& t) { return t.player_ids_list.empty(); }
@@ -335,10 +373,9 @@ int main(int argc, char* argv[]) {
     int max_iterations = stoi(argv[2]);
     int seed = stoi(argv[3]);
 
-    try {
-        string file_to_read = "instances/01.txt"; 
+    try { 
         
-        ProblemInstance prob = read_instance(file_to_read);
+        ProblemInstance prob = read_instance(instance_file);
 
         // Seed
         mt19937 g(seed);
@@ -352,19 +389,23 @@ int main(int argc, char* argv[]) {
         int k_current = k_min;
         int iter_without_improvement = 0;
         
+        // --- 1. Construção e Otimização Inicial ---
         Solution current_solution = build_initial_solution(prob, g);
-        Solution best_solution = current_solution; // S*
+        local_search(prob, current_solution);
+        Solution best_solution = current_solution;
 
         cout << "[Iter 0] Initial Solution = " 
              << best_solution.teams.size() << " teams" << endl;
 
         for (int i = 1; i <= MAX_ITERATIONS; ++i) {
-            current_solution = best_solution; 
-            local_search(prob, current_solution);
-            pertubarion_destroy_and_rebuild(prob, current_solution, k_current, g);
+            current_solution = best_solution;
+
+            
+            pertubarion_destroy_and_rebuild(prob, current_solution, k_current, g); 
+            local_search(prob, current_solution); 
 
             if (current_solution.teams.size() < best_solution.teams.size()) {
-                best_solution = current_solution; // New global optimum
+                best_solution = current_solution; // Novo ótimo global
                 iter_without_improvement = 0;
                 k_current = k_min;
 
@@ -372,15 +413,6 @@ int main(int argc, char* argv[]) {
                      << best_solution.teams.size() << " teams" << endl;
             } else {
                 iter_without_improvement++;
-            }
-
-            // It increases the strength of the disturbance
-            if (iter_without_improvement >= MAX_iter_without_improvement) {
-                k_current++;
-                if (k_current > k_max || k_current > prob.J / 10) { 
-                    k_current = k_min;
-                }
-                iter_without_improvement = 0;
             }
         }
 
