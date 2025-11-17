@@ -8,6 +8,21 @@ Este projeto implementa uma meta-heuristica de Busca Local Iterada (ILS) para re
 - Isadora Brigo Vidor
 - Aline Fraga da Silva
 
+## Estrutura do repositório
+```
+T1_INF05010/
+├── instances/                  # pasta com 10 instäncias do problema
+├── automate_tests.jl           # automação usada para rodar testes da formulação e exportar em csv
+├── fli.jl                      # formulação linear inteira para o problema, em julia
+├── ils_results.csv             # resultados das 200 execuções da heurística final
+├── ils_time.cpp                # heurística final adaptada para executar com limite de tempo e escrever no csv
+├── ils.cpp                     # heurística final implementada em c++
+├── Makefile                    # Makefile usado para executar os 200 testes de ils_time.cpp
+├── Manifest.toml               # Arquivos para execução do código julia
+├── Project.toml
+├── resultados_formulacao.csv   # Resultados gerados por automate_tests.jl
+```
+
 ## Como rodar esse repositorio:
 - Instale um compilador C++:
 ```sh
