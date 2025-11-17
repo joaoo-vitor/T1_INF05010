@@ -431,7 +431,7 @@ int main(int argc, char* argv[]) {
     if (argc == 6) {
         string flag = argv[4];
         if (flag == "--perturbation_ratio") {
-            perturbation_ratio = stoi(argv[5]);
+            perturbation_ratio = stof(argv[5]);
         } else {
             cerr << "Unknown option: " << flag << "\n";
             return 1;
