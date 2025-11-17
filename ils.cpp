@@ -152,7 +152,7 @@ vector<Team> construct_initial_solution(const ProblemInstance &instance, mt19937
 
     vector<Team> teams;
 
-    // Place players one by one (First Fit Decreasing)
+    // Place players one by one (First Fit)
     for (int pid : order) {
         const Player &p = instance.players[pid];
         bool placed = false;
@@ -426,13 +426,13 @@ int main(int argc, char* argv[]) {
     string instance_file = argv[1];
     int max_iterations = stoi(argv[2]);
     int seed = stoi(argv[3]);
-    double pertubation_ratio = 0.15;
+    double perturbation_ratio = 0.15;
 
     // Check optional argument
     if (argc == 6) {
         string flag = argv[4];
         if (flag == "--perturbation_ratio") {
-            pertubation_ratio = stoi(argv[5]);
+            perturbation_ratio = stof(argv[5]);
         } else {
             cerr << "Unknown option: " << flag << "\n";
             return 1;
@@ -451,7 +451,7 @@ int main(int argc, char* argv[]) {
 
         mt19937 rng(seed);
         // Build initial solution
-        auto initial_solution = construct_initial_solution(instance);
+        auto initial_solution = construct_initial_solution(instance, rng);
         cout << "Initial solution has " << initial_solution.size() << " teams.\n";
 
         vector<Team> best_solution = initial_solution;
@@ -473,7 +473,7 @@ int main(int argc, char* argv[]) {
                 print_solution(best_solution);
             }
             
-            current_solution = perturbation(current_solution, rng, instance, pertubation_ratio);
+            current_solution = perturbation(current_solution, rng, instance, perturbation_ratio);
         }
 
         cout << "Final solution uses " << best_solution.size() << " teams.\n";
